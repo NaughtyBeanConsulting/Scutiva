@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+
+{% block title %}Applications | Scutiva{% endblock %}
+{% block page_heading %}Discovered Applications{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-header">
+        <div>
+            <h2 class="panel-title">Codebase inventory</h2>
+            <p class="panel-subtitle">Tracked applications and dependency surfaces found on connected servers.</p>
+        </div>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Server</th>
+                    <th>Language</th>
+                    <th>Framework</th>
+                    <th>Dependency files</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for application in applications %}
+                    <tr>
+                        <td>{{ application.name }}</td>
+                        <td>{{ application.server.name }}</td>
+                        <td>{{ application.language|default:'Unknown' }}</td>
+                        <td>{{ application.framework|default:'Unknown' }}</td>
+                        <td>{{ application.dependency_files|join:', ' }}</td>
+                        <td>
+                            <button class="btn-secondary px-3 py-2 text-xs" hx-post="{% url 'scanners:quick-queue' 'application' application.pk %}" hx-target="#action-response-sink" hx-swap="innerHTML">Run once now</button>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="6" class="empty-row">No applications have been discovered yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

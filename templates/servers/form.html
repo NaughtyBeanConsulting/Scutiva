@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+
+{% block title %}Add Server | Scutiva{% endblock %}
+{% block page_heading %}Add Remote Server{% endblock %}
+
+{% block content %}
+<section class="panel max-w-4xl">
+    <div class="panel-header">
+        <div>
+            <h2 class="panel-title">Server details</h2>
+            <p class="panel-subtitle">Credentials are encrypted at rest and never displayed after save.</p>
+        </div>
+    </div>
+    <form method="post" x-data="{ authType: '{{ form.authentication_type.value|default:'password' }}' }" class="grid gap-5 md:grid-cols-2">
+        {% csrf_token %}
+        {% for field in form.visible_fields %}
+            <div class="{% if field.name == 'description' %}md:col-span-2{% endif %}">
+                <label class="mb-2 block text-sm font-medium text-slate-200" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.errors %}<p class="mt-2 text-sm text-rose-300">{{ field.errors|join:', ' }}</p>{% endif %}
+            </div>
+        {% endfor %}
+        <div>
+            <label class="mb-2 block text-sm font-medium text-slate-200" for="id_password">Password</label>
+            {{ form.password }}
+            {% if form.password.errors %}<p class="mt-2 text-sm text-rose-300">{{ form.password.errors|join:', ' }}</p>{% endif %}
+        </div>
+        <div class="md:col-span-2">
+            <label class="mb-2 block text-sm font-medium text-slate-200" for="id_private_key">Private key</label>
+            {{ form.private_key }}
+            {% if form.private_key.errors %}<p class="mt-2 text-sm text-rose-300">{{ form.private_key.errors|join:', ' }}</p>{% endif %}
+        </div>
+        <div>
+            <label class="mb-2 block text-sm font-medium text-slate-200" for="id_sudo_password">Sudo password</label>
+            {{ form.sudo_password }}
+        </div>
+        <div class="md:col-span-2 flex flex-wrap gap-3">
+            <button type="submit" class="btn-primary">Save server</button>
+            <button
+                type="button"
+                class="btn-secondary"
+                hx-post="{% url 'servers:test-connection' %}"
+                hx-include="closest form"
+                hx-target="#connection-result"
+                hx-swap="innerHTML"
+            >
+                Test SSH connection
+            </button>
+        </div>
+        <div id="connection-result" class="md:col-span-2"></div>
+    </form>
+</section>
+{% endblock %}

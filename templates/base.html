@@ -1,0 +1,151 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Scutiva{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+    <script defer src="{% static 'vendor/js/htmx.min.js' %}"></script>
+    <script defer src="{% static 'vendor/js/alpine.min.js' %}"></script>
+</head>
+<body class="min-h-full bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.15),_transparent_30%),linear-gradient(180deg,#020617_0%,#020617_45%,#000814_100%)] text-slate-100">
+    <div id="live-updates-poller" hx-get="{% url 'scanners:live' %}" hx-trigger="load, every 5s" hx-swap="none"></div>
+    <div class="min-h-screen lg:grid lg:grid-cols-[280px_minmax(0,1fr)]">
+        <aside class="border-b border-slate-800/80 bg-slate-950/70 px-6 py-6 backdrop-blur lg:border-b-0 lg:border-r">
+            <div class="flex items-center gap-3">
+                <img src="{% static 'img/scutiva-logo.svg' %}" alt="Scutiva" class="h-12 w-12">
+                <div>
+                    <p class="font-display text-xl font-bold tracking-tight">Scutiva</p>
+                    <p class="text-xs uppercase tracking-[0.2em] text-cyan-300/70">CVE Operations Portal</p>
+                </div>
+            </div>
+            <nav class="mt-8 space-y-2 text-sm">
+                <a class="nav-link" href="{% url 'dashboard:index' %}">Dashboard</a>
+                <a class="nav-link" href="{% url 'servers:list' %}">Servers</a>
+                <a class="nav-link" href="{% url 'servers:applications' %}">Applications</a>
+                <a class="nav-link" href="{% url 'scanners:list' %}">Scans</a>
+                <a class="nav-link" href="{% url 'vulnerabilities:list' %}">Vulnerabilities</a>
+                <a class="nav-link" href="{% url 'sboms:list' %}">SBOMs</a>
+                <a class="nav-link" href="{% url 'reports:list' %}">Reports</a>
+                <a class="nav-link" href="{% url 'core:settings' %}">Settings</a>
+            </nav>
+            <div class="mt-8 rounded-3xl border border-slate-800 bg-slate-900/70 p-4 text-sm text-slate-300">
+                <p class="font-medium text-white">Toolchain</p>
+                <p class="mt-2">Syft for SBOM generation, Grype and Trivy for vulnerability detection, with PostgreSQL-backed workers claiming queued jobs using SKIP LOCKED.</p>
+            </div>
+        </aside>
+        <main class="px-4 py-6 sm:px-8 lg:px-10">
+            <header class="mb-8 flex flex-col gap-4 border-b border-slate-800/80 pb-6 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                    <p class="text-xs uppercase tracking-[0.35em] text-cyan-300/70">Open source security operations</p>
+                    <h1 class="font-display text-3xl font-bold tracking-tight text-white">{% block page_heading %}{{ app_name }}{% endblock %}</h1>
+                </div>
+                <div class="flex items-center gap-4">
+                    {% if user.is_authenticated %}
+                        <div class="rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-2 text-right text-sm">
+                            <p class="font-medium text-white">{{ user.full_name|default:user.email }}</p>
+                            <p class="text-slate-400">{{ user.get_role_display }}</p>
+                        </div>
+                        <form method="post" action="{% url 'logout' %}">
+                            {% csrf_token %}
+                            <button type="submit" class="btn-secondary">Sign out</button>
+                        </form>
+                    {% endif %}
+                </div>
+            </header>
+
+            {% if messages %}
+                <div class="mb-6 space-y-3">
+                    {% for message in messages %}
+                        <div class="rounded-2xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+
+            <div id="global-live-status" class="mb-6">
+                {% include 'scanners/_live_status.html' %}
+            </div>
+
+            <div id="action-response-sink" class="hidden"></div>
+
+            <div id="global-toast-stack" class="pointer-events-none fixed bottom-6 right-6 z-50 flex max-w-sm flex-col gap-3">
+                {% include 'scanners/_toast_stack.html' %}
+            </div>
+
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+    <script>
+        (function () {
+            const storageKey = "scutiva-open-job-details";
+
+            function getOpenJobIds() {
+                try {
+                    return JSON.parse(localStorage.getItem(storageKey) || "[]");
+                } catch (error) {
+                    return [];
+                }
+            }
+
+            function setOpenJobIds(ids) {
+                localStorage.setItem(storageKey, JSON.stringify(Array.from(new Set(ids.map(String)))));
+            }
+
+            function syncJobDetailRows(root) {
+                const openIds = new Set(getOpenJobIds());
+                root.querySelectorAll("[data-job-detail-row]").forEach((row) => {
+                    const jobId = row.getAttribute("data-job-id");
+                    const shouldOpen = openIds.has(jobId);
+                    row.classList.toggle("hidden", !shouldOpen);
+                    if (shouldOpen) {
+                        const panel = root.querySelector(`#job-detail-panel-${jobId}`);
+                        if (panel && panel.children.length === 1 && panel.textContent.includes("Load details")) {
+                            const button = root.querySelector(`[data-job-detail-toggle][data-job-id='${jobId}']`);
+                            if (button) {
+                                htmx.trigger(button, "click");
+                            }
+                        }
+                    }
+                });
+            }
+
+            document.addEventListener("click", (event) => {
+                const button = event.target.closest("[data-job-detail-toggle]");
+                if (!button) {
+                    return;
+                }
+                const jobId = button.getAttribute("data-job-id");
+                const row = document.querySelector(`#job-detail-row-${jobId}`);
+                if (!row) {
+                    return;
+                }
+                row.classList.toggle("hidden");
+                const openIds = new Set(getOpenJobIds());
+                if (row.classList.contains("hidden")) {
+                    openIds.delete(jobId);
+                } else {
+                    openIds.add(jobId);
+                }
+                setOpenJobIds(Array.from(openIds));
+            });
+
+            document.addEventListener("htmx:afterSwap", (event) => {
+                if (event.target && event.target.id === "scan-jobs-table") {
+                    syncJobDetailRows(event.target);
+                }
+            });
+
+            document.addEventListener("DOMContentLoaded", () => {
+                const table = document.getElementById("scan-jobs-table");
+                if (table) {
+                    syncJobDetailRows(table);
+                }
+            });
+        }());
+    </script>
+</body>
+</html>

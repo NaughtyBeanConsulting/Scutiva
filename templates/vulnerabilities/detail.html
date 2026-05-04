@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ finding.cve_id }} | Scutiva{% endblock %}
+{% block page_heading %}{{ finding.cve_id }}{% endblock %}
+
+{% block content %}
+<section class="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Finding detail</h2>
+                <p class="panel-subtitle">Context, severity, remediation state, and source metadata.</p>
+            </div>
+            <span class="severity-badge severity-{{ finding.severity }}">{{ finding.get_severity_display }}</span>
+        </div>
+        <dl class="grid gap-4 md:grid-cols-2">
+            <div class="meta-card"><dt>CVSS</dt><dd>{{ finding.cvss_score|default:'N/A' }}</dd></div>
+            <div class="meta-card"><dt>Scanner</dt><dd>{{ finding.source_scanner }}</dd></div>
+            <div class="meta-card"><dt>Package</dt><dd>{{ finding.package_name }} {{ finding.installed_version }}</dd></div>
+            <div class="meta-card"><dt>Fix version</dt><dd>{{ finding.fixed_version|default:'No fix published' }}</dd></div>
+            <div class="meta-card"><dt>Server</dt><dd>{{ finding.server.name }}</dd></div>
+            <div class="meta-card"><dt>Application</dt><dd>{{ finding.application.name|default:'VM-wide scan' }}</dd></div>
+            <div class="meta-card md:col-span-2"><dt>Description</dt><dd>{{ finding.description|default:'No description provided.' }}</dd></div>
+            <div class="meta-card md:col-span-2"><dt>Affected path</dt><dd>{{ finding.affected_path|default:'Not provided' }}</dd></div>
+            <div class="meta-card md:col-span-2"><dt>Remediation notes</dt><dd>{{ finding.remediation_notes|default:'No remediation notes yet.' }}</dd></div>
+        </dl>
+    </div>
+    <div class="space-y-6">
+        <div id="triage-panel">
+            {% include 'vulnerabilities/_triage_panel.html' %}
+        </div>
+        <div class="panel">
+            <h2 class="panel-title">Timeline</h2>
+            <div class="mt-4 space-y-3 text-sm">
+                <div class="rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3">First seen: {{ finding.first_seen|default:'Unknown' }}</div>
+                <div class="rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3">Last seen: {{ finding.last_seen|default:'Unknown' }}</div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

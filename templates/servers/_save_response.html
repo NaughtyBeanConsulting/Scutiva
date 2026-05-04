@@ -1,0 +1,11 @@
+<div id="server-table" hx-swap-oob="true">
+    {% include 'servers/_table.html' %}
+</div>
+<section class="panel">
+    <h2 class="panel-title">Server saved</h2>
+    <p class="panel-subtitle">{{ server.name }} is ready for installer, discovery, and scan jobs.</p>
+    <div class="mt-5 flex flex-wrap gap-3">
+        <a class="btn-secondary" href="{% url 'servers:detail' server.pk %}">Open details</a>
+        <button class="btn-primary" hx-get="{% url 'servers:create' %}" hx-target="#server-workspace" hx-swap="innerHTML">Add another</button>
+    </div>
+</section>

@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+
+{% block title %}SBOMs | Scutiva{% endblock %}
+{% block page_heading %}Software Bills of Materials{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-header">
+        <div>
+            <h2 class="panel-title">Stored SBOMs</h2>
+            <p class="panel-subtitle">Generated package inventories from Syft for hosts and applications.</p>
+        </div>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Server</th>
+                    <th>Application</th>
+                    <th>Format</th>
+                    <th>Packages</th>
+                    <th>Path</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for artifact in sboms %}
+                    <tr>
+                        <td>#{{ artifact.pk }}</td>
+                        <td>{{ artifact.server.name }}</td>
+                        <td>{{ artifact.application.name|default:'VM-wide' }}</td>
+                        <td>{{ artifact.format }}</td>
+                        <td>{{ artifact.package_count }}</td>
+                        <td>{{ artifact.file_path }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="6" class="empty-row">No SBOMs have been stored yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

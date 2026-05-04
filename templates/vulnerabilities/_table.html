@@ -1,0 +1,34 @@
+<div class="overflow-x-auto">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Severity</th>
+                <th>CVE</th>
+                <th>Package</th>
+                <th>Server</th>
+                <th>Application</th>
+                <th>Scanner</th>
+                <th>Fix</th>
+                <th>Status</th>
+                <th>Last seen</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for finding in findings %}
+                <tr>
+                    <td><span class="severity-badge severity-{{ finding.severity }}">{{ finding.get_severity_display }}</span></td>
+                    <td><a class="text-cyan-300 hover:text-cyan-200" href="{% url 'vulnerabilities:detail' finding.pk %}">{{ finding.cve_id }}</a></td>
+                    <td>{{ finding.package_name }}</td>
+                    <td>{{ finding.server.name }}</td>
+                    <td>{{ finding.application.name|default:'VM-wide' }}</td>
+                    <td>{{ finding.source_scanner }}</td>
+                    <td>{% if finding.fix_available %}Yes{% else %}No{% endif %}</td>
+                    <td>{{ finding.get_status_display }}</td>
+                    <td>{{ finding.last_seen|date:'Y-m-d H:i' }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="9" class="empty-row">No findings match the current filters.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

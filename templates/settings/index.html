@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+
+{% block title %}Settings | Scutiva{% endblock %}
+{% block page_heading %}Workspace Settings{% endblock %}
+
+{% block content %}
+<section class="grid gap-6 lg:grid-cols-2">
+    <div class="panel">
+        <h2 class="panel-title">Environment defaults</h2>
+        <div class="mt-4 space-y-3 text-sm text-slate-300">
+            <div class="meta-card"><dt>Authentication</dt><dd>Email and password via Django auth</dd></div>
+            <div class="meta-card"><dt>Queue</dt><dd>PostgreSQL worker queue using FOR UPDATE SKIP LOCKED</dd></div>
+            <div class="meta-card"><dt>Scanners</dt><dd>Syft, Grype, and Trivy</dd></div>
+            <div class="meta-card"><dt>SSH</dt><dd>Paramiko-based remote connectivity</dd></div>
+        </div>
+    </div>
+    <div class="panel">
+        <h2 class="panel-title">Project notes</h2>
+        <p class="mt-4 text-sm text-slate-300">This scaffold is optimized for a PostgreSQL-backed security portal with dark-mode UI, HTMX partial updates, and shared template/static/media directories for the next implementation phase.</p>
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+
+{% block title %}Servers | Scutiva{% endblock %}
+{% block page_heading %}SSH Servers{% endblock %}
+
+{% block content %}
+<section class="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Remote targets</h2>
+                <p class="panel-subtitle">Add and edit servers inline, then queue installs, discovery, and scans.</p>
+            </div>
+            <button
+                class="btn-primary"
+                hx-get="{% url 'servers:create' %}"
+                hx-target="#server-workspace"
+                hx-swap="innerHTML"
+            >
+                Add server
+            </button>
+        </div>
+        <div id="server-table">
+            {% include 'servers/_table.html' %}
+        </div>
+    </div>
+    <div id="server-workspace">
+        {% include 'servers/_workspace_empty.html' %}
+    </div>
+</section>
+{% endblock %}

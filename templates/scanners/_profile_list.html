@@ -1,0 +1,16 @@
+<div class="space-y-3">
+    {% for profile in profiles %}
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-sm">
+            <div class="flex items-center justify-between gap-4">
+                <div>
+                    <span class="font-medium text-white">{{ profile.name }}</span>
+                    {% if profile.is_default %}<span class="ml-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-cyan-200">Default</span>{% endif %}
+                </div>
+                <button class="btn-secondary px-3 py-2 text-xs" hx-get="{% url 'scanners:profile-edit' profile.pk %}" hx-target="#scan-profile-workspace" hx-swap="innerHTML">Edit</button>
+            </div>
+            <p class="mt-2 text-slate-400">{{ profile.description|default:'No description provided.' }}</p>
+        </div>
+    {% empty %}
+        <p class="text-sm text-slate-400">No scan profiles yet.</p>
+    {% endfor %}
+</div>

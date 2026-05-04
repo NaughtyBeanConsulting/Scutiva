@@ -1,0 +1,33 @@
+<div class="overflow-x-auto">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Host</th>
+                <th>Environment</th>
+                <th>Authentication</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for server in servers %}
+                <tr>
+                    <td><a class="text-cyan-300 hover:text-cyan-200" href="{% url 'servers:detail' server.pk %}">{{ server.name }}</a></td>
+                    <td>{{ server.host }}:{{ server.ssh_port }}</td>
+                    <td>{{ server.get_environment_display }}</td>
+                    <td>{{ server.get_authentication_type_display }}</td>
+                    <td><span class="status-pill {{ server.last_connection_status|slugify }}">{{ server.get_last_connection_status_display }}</span></td>
+                    <td>
+                        <div class="flex flex-wrap gap-2">
+                            <button class="btn-secondary px-3 py-2 text-xs" hx-get="{% url 'servers:edit' server.pk %}" hx-target="#server-workspace" hx-swap="innerHTML">Edit</button>
+                            <button class="btn-secondary px-3 py-2 text-xs" hx-post="{% url 'scanners:quick-queue' 'server' server.pk %}" hx-target="#action-response-sink" hx-swap="innerHTML">Run once now</button>
+                        </div>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="6" class="empty-row">No servers have been added yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

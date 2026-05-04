@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard | Scutiva{% endblock %}
+{% block page_heading %}Exposure Dashboard{% endblock %}
+
+{% block content %}
+<section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <article class="stat-card"><span>Total servers</span><strong>{{ summary.total_servers }}</strong></article>
+    <article class="stat-card"><span>Total scans</span><strong>{{ summary.total_scans }}</strong></article>
+    <article class="stat-card critical"><span>Critical CVEs</span><strong>{{ summary.critical }}</strong></article>
+    <article class="stat-card high"><span>High CVEs</span><strong>{{ summary.high }}</strong></article>
+    <article class="stat-card"><span>Medium CVEs</span><strong>{{ summary.medium }}</strong></article>
+    <article class="stat-card"><span>Low CVEs</span><strong>{{ summary.low }}</strong></article>
+    <article class="stat-card"><span>Known exploited</span><strong>{{ summary.known_exploited }}</strong></article>
+    <article class="stat-card"><span>Fixes available</span><strong>{{ summary.fixes_available }}</strong></article>
+    <article class="stat-card high"><span>High compliance gaps</span><strong>{{ summary.compliance_high }}</strong></article>
+    <article class="stat-card"><span>Total compliance gaps</span><strong>{{ summary.compliance_total }}</strong></article>
+</section>
+
+<section class="mt-8 grid gap-6 xl:grid-cols-[1.4fr_1fr]">
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Recent scans</h2>
+                <p class="panel-subtitle">Latest activity across servers and discovered applications.</p>
+            </div>
+            <a class="btn-secondary" href="{% url 'scanners:list' %}">View all scans</a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Status</th>
+                        <th>Server</th>
+                        <th>Application</th>
+                        <th>Profile</th>
+                        <th>Created</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for scan in recent_scans %}
+                        <tr>
+                            <td><span class="status-pill {{ scan.status|slugify }}">{{ scan.get_status_display }}</span></td>
+                            <td>{{ scan.server.name }}</td>
+                            <td>{{ scan.application.name|default:'VM-wide scan' }}</td>
+                            <td>{{ scan.scan_profile.name|default:'Ad hoc' }}</td>
+                            <td>{{ scan.created_at|date:'Y-m-d H:i' }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="5" class="empty-row">No scans yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="space-y-6">
+        <div class="panel">
+            <h2 class="panel-title">Top vulnerable servers</h2>
+            <div class="mt-4 space-y-3">
+                {% for server in top_servers %}
+                    <div class="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-sm">
+                        <span>{{ server.name }}</span>
+                        <span class="font-semibold text-cyan-300">{{ server.vuln_count }}</span>
+                    </div>
+                {% empty %}
+                    <p class="text-sm text-slate-400">No server findings yet.</p>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="panel">
+            <h2 class="panel-title">Top vulnerable packages</h2>
+            <div class="mt-4 space-y-3">
+                {% for package in top_packages %}
+                    <div class="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-sm">
+                        <span>{{ package.package_name }}</span>
+                        <span class="font-semibold text-amber-300">{{ package.total }}</span>
+                    </div>
+                {% empty %}
+                    <p class="text-sm text-slate-400">No package findings yet.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

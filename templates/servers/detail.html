@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ server.name }} | Scutiva{% endblock %}
+{% block page_heading %}{{ server.name }}{% endblock %}
+
+{% block content %}
+<section class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Server overview</h2>
+                <p class="panel-subtitle">Connection metadata, environment classification, and discovered apps.</p>
+            </div>
+            <div class="flex flex-wrap gap-3">
+                <a class="btn-secondary" href="{% url 'scanners:installer-script' %}">Installer script</a>
+                <button class="btn-secondary" hx-post="{% url 'scanners:server-job' server.pk 'install' %}" hx-target="#server-job-feedback" hx-swap="innerHTML">Queue install</button>
+                <button class="btn-secondary" hx-post="{% url 'scanners:server-job' server.pk 'discovery' %}" hx-target="#server-job-feedback" hx-swap="innerHTML">Queue discovery</button>
+            </div>
+        </div>
+        <div id="server-job-feedback" class="mb-4"></div>
+        <dl class="grid gap-4 md:grid-cols-2">
+            <div class="meta-card"><dt>Host</dt><dd>{{ server.host }}:{{ server.ssh_port }}</dd></div>
+            <div class="meta-card"><dt>Environment</dt><dd>{{ server.get_environment_display }}</dd></div>
+            <div class="meta-card"><dt>Authentication</dt><dd>{{ server.get_authentication_type_display }}</dd></div>
+            <div class="meta-card"><dt>Last connection</dt><dd>{{ server.last_successful_connection_at|default:'Never' }}</dd></div>
+            <div class="meta-card md:col-span-2"><dt>Discovery roots</dt><dd>{{ server.codebase_paths|linebreaksbr }}</dd></div>
+            <div class="meta-card md:col-span-2"><dt>Tags</dt><dd>{{ server.tags|default:'No tags' }}</dd></div>
+            <div class="meta-card md:col-span-2"><dt>Description</dt><dd>{{ server.description|default:'No description provided.' }}</dd></div>
+        </dl>
+    </div>
+    <div id="server-activity-panel" hx-get="{% url 'servers:activity' server.pk %}" hx-trigger="load, every 5s" hx-swap="innerHTML">
+        {% include 'servers/_activity_panel.html' %}
+    </div>
+</section>
+{% endblock %}

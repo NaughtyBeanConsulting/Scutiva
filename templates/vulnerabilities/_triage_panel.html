@@ -1,0 +1,20 @@
+<div class="panel">
+    <h2 class="panel-title">Triage</h2>
+    <div class="mt-4 space-y-3 text-sm">
+        <div class="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3"><span>Fix available</span><span>{{ finding.fix_available|yesno:'Yes,No' }}</span></div>
+        <div class="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3"><span>Known exploit</span><span>{{ finding.exploit_known|yesno:'Yes,No' }}</span></div>
+        <div class="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3"><span>CISA KEV</span><span>{{ finding.cisa_kev|yesno:'Yes,No' }}</span></div>
+        <div class="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3"><span>Status</span><span>{{ finding.get_status_display }}</span></div>
+    </div>
+    <form method="post" class="mt-5 space-y-4" hx-post="{% url 'vulnerabilities:triage' finding.pk %}" hx-target="#triage-panel" hx-swap="innerHTML">
+        {% csrf_token %}
+        {% for field in triage_form %}
+            <div>
+                <label class="mb-2 block text-sm font-medium text-slate-200" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.errors %}<p class="mt-2 text-sm text-rose-300">{{ field.errors|join:', ' }}</p>{% endif %}
+            </div>
+        {% endfor %}
+        <button type="submit" class="btn-primary">Save triage</button>
+    </form>
+</div>

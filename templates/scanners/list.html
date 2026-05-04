@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+
+{% block title %}Scans | Scutiva{% endblock %}
+{% block page_heading %}Scans and Tooling{% endblock %}
+
+{% block content %}
+<section class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Scan executions</h2>
+                <p class="panel-subtitle">Queued, running, and completed jobs across servers and codebases.</p>
+            </div>
+        </div>
+        <div id="scan-jobs-table" hx-get="{% url 'scanners:jobs-table' %}" hx-trigger="load, every 5s" hx-swap="innerHTML">
+            {% include 'scanners/_jobs_table.html' %}
+        </div>
+    </div>
+    <div class="space-y-6">
+        <div class="panel">
+            <h2 class="panel-title">Queue a scan</h2>
+            <div id="scan-queue-panel" class="mt-4">
+                {% include 'scanners/_queue_panel.html' %}
+            </div>
+        </div>
+        <div class="panel">
+            <h2 class="panel-title">Default installer script</h2>
+            <p class="panel-subtitle">Ubuntu-first installation for Syft, Grype, and Trivy.</p>
+            <a class="btn-secondary mt-4 inline-flex" href="{% url 'scanners:installer-script' %}">Download script</a>
+            <pre class="mt-4 overflow-x-auto rounded-3xl border border-slate-800 bg-slate-950 p-4 text-xs text-slate-300">{{ installer_script }}</pre>
+        </div>
+        <div class="panel">
+            <div class="panel-header border-b-0 pb-0">
+                <div>
+                    <h2 class="panel-title">Scan profiles</h2>
+                    <p class="panel-subtitle">Create and edit profiles inline with HTMX.</p>
+                </div>
+                <button class="btn-secondary" hx-get="{% url 'scanners:profile-create' %}" hx-target="#scan-profile-workspace" hx-swap="innerHTML">New profile</button>
+            </div>
+            <div id="scan-profile-list" class="mt-4">
+                {% include 'scanners/_profile_list.html' %}
+            </div>
+            <div id="scan-profile-workspace" class="mt-6">
+                {% include 'scanners/_profile_workspace_empty.html' %}
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

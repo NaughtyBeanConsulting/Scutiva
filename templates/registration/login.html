@@ -1,0 +1,49 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sign in | Scutiva</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+</head>
+<body class="min-h-full bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.18),_transparent_35%),linear-gradient(180deg,#020617_0%,#020617_48%,#000814_100%)] text-slate-100">
+    <main class="mx-auto flex min-h-screen max-w-6xl items-center px-6 py-12">
+        <div class="grid w-full gap-10 lg:grid-cols-[1.1fr_0.9fr]">
+            <section class="flex flex-col justify-center">
+                <div class="inline-flex w-fit items-center gap-3 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-sm text-cyan-200">
+                    <span class="h-2 w-2 rounded-full bg-cyan-300"></span>
+                    Open-source VM and codebase scanner
+                </div>
+                <h1 class="mt-8 font-display text-5xl font-bold tracking-tight text-white">Reduce blind spots across hosts, codebases, and packages.</h1>
+                <p class="mt-6 max-w-2xl text-lg text-slate-300">Scutiva centralizes server onboarding, SBOM generation, vulnerability triage, and remediation tracking in a dark-mode security dashboard built for small teams.</p>
+            </section>
+            <section class="rounded-[2rem] border border-slate-800 bg-slate-900/80 p-8 shadow-2xl shadow-cyan-950/30 backdrop-blur">
+                <div class="mb-8 flex items-center gap-3">
+                    <img src="{% static 'img/scutiva-logo.svg' %}" alt="Scutiva" class="h-14 w-14">
+                    <div>
+                        <p class="font-display text-2xl font-bold">Scutiva</p>
+                        <p class="text-sm text-slate-400">Email and password access</p>
+                    </div>
+                </div>
+                <form method="post" class="space-y-5">
+                    {% csrf_token %}
+                    {% for field in form %}
+                        <div>
+                            <label class="mb-2 block text-sm font-medium text-slate-200" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                            {{ field }}
+                            {% if field.errors %}<p class="mt-2 text-sm text-rose-300">{{ field.errors|join:', ' }}</p>{% endif %}
+                        </div>
+                    {% endfor %}
+                    {% if form.non_field_errors %}<p class="text-sm text-rose-300">{{ form.non_field_errors|join:', ' }}</p>{% endif %}
+                    <button type="submit" class="btn-primary w-full justify-center">Sign in</button>
+                </form>
+                <p class="mt-6 text-sm text-slate-500">Create users through the Django admin or `createsuperuser` during initial setup.</p>
+            </section>
+        </div>
+    </main>
+</body>
+</html>
