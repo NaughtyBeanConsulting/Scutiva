@@ -1,9 +1,13 @@
 from contextlib import contextmanager
 from dataclasses import dataclass
+from hashlib import sha256
 from io import StringIO
 import shlex
+import time
+from base64 import urlsafe_b64encode
 
 import paramiko
+from django.conf import settings
 from django.utils import timezone
 
 from .models import Server
@@ -15,6 +19,29 @@ class SSHCommandResult:
     stdout: str
     stderr: str
     exit_status: int
+
+
+class ExpectedHostKeyPolicy(paramiko.MissingHostKeyPolicy):
+    def __init__(self, *, expected_fingerprint="", allow_auto_add=False):
+        self.expected_fingerprint = (expected_fingerprint or "").strip()
+        self.allow_auto_add = allow_auto_add
+
+    def missing_host_key(self, client, hostname, key):
+        actual_fingerprint = format_host_key_fingerprint(key)
+        if self.expected_fingerprint:
+            if actual_fingerprint != self.expected_fingerprint:
+                raise paramiko.SSHException(
+                    f"Host key fingerprint mismatch for {hostname}. Expected {self.expected_fingerprint}, got {actual_fingerprint}."
+                )
+            client.get_host_keys().add(hostname, key.get_name(), key)
+            return
+
+        if not self.allow_auto_add:
+            raise paramiko.SSHException(
+                f"Host key for {hostname} is not pinned. Capture and save the fingerprint before connecting."
+            )
+
+        client.get_host_keys().add(hostname, key.get_name(), key)
 
 
 def _load_private_key(private_key_text):
@@ -36,9 +63,9 @@ def _build_connect_kwargs(data):
         "hostname": data["host"],
         "port": data["ssh_port"],
         "username": data["username"],
-        "timeout": 15,
-        "banner_timeout": 15,
-        "auth_timeout": 15,
+        "timeout": settings.SSH_CONNECT_TIMEOUT,
+        "banner_timeout": settings.SSH_BANNER_TIMEOUT,
+        "auth_timeout": settings.SSH_AUTH_TIMEOUT,
     }
 
     if data["authentication_type"] == Server.AuthenticationType.PASSWORD:
@@ -47,6 +74,24 @@ def _build_connect_kwargs(data):
         connect_kwargs["pkey"] = _load_private_key(data.get("private_key"))
 
     return connect_kwargs
+
+
+def format_host_key_fingerprint(key):
+    digest = sha256(key.asbytes()).digest()
+    encoded = urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+    return f"SHA256:{encoded}"
+
+
+def _expected_fingerprint_from_data(data):
+    expected_fingerprint = str(data.get("host_key_fingerprint") or "").strip()
+    verified_host = str(data.get("verified_host") or "").strip()
+    verified_ssh_port = str(data.get("verified_ssh_port") or "").strip()
+    current_host = str(data.get("host") or "").strip()
+    current_port = str(data.get("ssh_port") or "").strip()
+
+    if expected_fingerprint and verified_host == current_host and verified_ssh_port == current_port:
+        return expected_fingerprint
+    return ""
 
 
 def _server_connection_data(server):
@@ -69,20 +114,51 @@ def _mark_server_status(server, ok):
     server.save(update_fields=["last_connection_status", "last_successful_connection_at", "updated_at"])
 
 
+def _build_host_key_policy(*, expected_fingerprint="", allow_auto_add=False):
+    return ExpectedHostKeyPolicy(expected_fingerprint=expected_fingerprint, allow_auto_add=allow_auto_add)
+
+
+def _connect_client(connect_kwargs, *, expected_fingerprint="", allow_auto_add=False):
+    last_error = None
+    attempts = max(1, settings.SSH_CONNECT_RETRIES)
+
+    for attempt in range(1, attempts + 1):
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(_build_host_key_policy(expected_fingerprint=expected_fingerprint, allow_auto_add=allow_auto_add))
+        try:
+            client.connect(**connect_kwargs)
+            return client
+        except (paramiko.SSHException, OSError) as exc:
+            client.close()
+            last_error = exc
+            if attempt >= attempts:
+                raise
+            time.sleep(settings.SSH_RETRY_DELAY_SECONDS)
+
+    raise last_error
+
+
 @contextmanager
 def ssh_client_for_server(server):
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
+    client = None
     try:
-        client.connect(**_build_connect_kwargs(_server_connection_data(server)))
+        expected_fingerprint = (server.host_key_fingerprint or "").strip()
+        if server.requires_pinned_host_key() and not expected_fingerprint:
+            raise ValueError("Production servers require a pinned SSH host fingerprint.")
+
+        client = _connect_client(
+            _build_connect_kwargs(_server_connection_data(server)),
+            expected_fingerprint=expected_fingerprint,
+            allow_auto_add=not expected_fingerprint and settings.SSH_AUTO_ADD_HOST_KEYS and not server.requires_pinned_host_key(),
+        )
         _mark_server_status(server, True)
         yield client
     except Exception:
         _mark_server_status(server, False)
         raise
     finally:
-        client.close()
+        if client is not None:
+            client.close()
 
 
 def run_remote_command(server, command, sudo=False, timeout=1200):
@@ -127,13 +203,26 @@ def download_text(server, remote_path):
 
 
 def test_ssh_connection(cleaned_data):
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
     try:
-        client.connect(**_build_connect_kwargs(cleaned_data))
-        return True, "SSH connection succeeded."
+        expected_fingerprint = _expected_fingerprint_from_data(cleaned_data)
+        environment = cleaned_data.get("environment")
+        requires_pinned = environment == Server.Environment.PRODUCTION
+        client = _connect_client(
+            _build_connect_kwargs(cleaned_data),
+            expected_fingerprint=expected_fingerprint,
+            allow_auto_add=not expected_fingerprint and not requires_pinned,
+        )
+        remote_key = client.get_transport().get_remote_server_key()
+        fingerprint = format_host_key_fingerprint(remote_key)
+        algorithm = remote_key.get_name()
+        return True, f"SSH connection succeeded. Captured {algorithm} fingerprint {fingerprint}.", {
+            "host_key_algorithm": algorithm,
+            "host_key_fingerprint": fingerprint,
+            "verified_host": str(cleaned_data.get("host") or "").strip(),
+            "verified_ssh_port": str(cleaned_data.get("ssh_port") or "").strip(),
+        }
     except Exception as exc:
-        return False, str(exc)
+        return False, str(exc), {}
     finally:
-        client.close()
+        if "client" in locals():
+            client.close()

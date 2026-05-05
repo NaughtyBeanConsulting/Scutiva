@@ -23,8 +23,6 @@ class ScanProfileForm(StyledFormMixin, forms.ModelForm):
             "enable_grype",
             "enable_trivy",
             "enable_lynis",
-            "enable_openscap",
-            "openscap_profile",
             "include_dev_dependencies",
             "severity_threshold",
             "include_paths",

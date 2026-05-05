@@ -10,7 +10,7 @@
                 <span>Scanner install status</span>
                 <span class="status-pill {{ installation.status|slugify }}">{{ installation.get_status_display }}</span>
             </div>
-            <p class="mt-3 text-slate-400">Syft {{ installation.syft_version|default:'-' }}, Grype {{ installation.grype_version|default:'-' }}, Trivy {{ installation.trivy_version|default:'-' }}</p>
+            <p class="mt-3 text-slate-400">Lynis {{ installation.lynis_version|default:'-' }}, Syft {{ installation.syft_version|default:'-' }}, Grype {{ installation.grype_version|default:'-' }}, Trivy {{ installation.trivy_version|default:'-' }}</p>
         </div>
     {% endif %}
     <div class="mt-4 space-y-3">

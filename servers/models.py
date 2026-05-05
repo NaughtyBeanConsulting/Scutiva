@@ -38,6 +38,8 @@ class Server(TimeStampedModel):
 	tags = models.CharField(max_length=255, blank=True)
 	description = models.TextField(blank=True)
 	is_active = models.BooleanField(default=True)
+	host_key_algorithm = models.CharField(max_length=64, blank=True)
+	host_key_fingerprint = models.CharField(max_length=255, blank=True)
 	last_connection_status = models.CharField(max_length=32, choices=ConnectionStatus.choices, default=ConnectionStatus.UNKNOWN)
 	last_successful_connection_at = models.DateTimeField(null=True, blank=True)
 	credential_updated_at = models.DateTimeField(null=True, blank=True)
@@ -72,6 +74,9 @@ class Server(TimeStampedModel):
 
 	def get_codebase_paths(self):
 		return [path.strip() for path in self.codebase_paths.splitlines() if path.strip()]
+
+	def requires_pinned_host_key(self):
+		return self.environment == self.Environment.PRODUCTION
 
 
 class Application(TimeStampedModel):

@@ -18,29 +18,14 @@ class Migration(migrations.Migration):
             field=models.CharField(blank=True, max_length=64),
         ),
         migrations.AddField(
-            model_name='scannerinstallation',
-            name='openscap_version',
-            field=models.CharField(blank=True, max_length=128),
-        ),
-        migrations.AddField(
             model_name='scanprofile',
             name='enable_lynis',
             field=models.BooleanField(default=True),
         ),
-        migrations.AddField(
-            model_name='scanprofile',
-            name='enable_openscap',
-            field=models.BooleanField(default=True),
-        ),
-        migrations.AddField(
-            model_name='scanprofile',
-            name='openscap_profile',
-            field=models.CharField(default='xccdf_org.ssgproject.content_profile_cis_level1_server', max_length=255),
-        ),
         migrations.AlterField(
             model_name='scanjob',
             name='stage',
-            field=models.CharField(choices=[('queued', 'Queued'), ('claimed', 'Claimed by worker'), ('installing_tools', 'Installing tools'), ('discovering_apps', 'Discovering apps'), ('preparing_target', 'Preparing target'), ('building_sbom', 'Building SBOM'), ('running_grype', 'Running Grype'), ('running_trivy', 'Running Trivy'), ('running_lynis', 'Running Lynis'), ('running_openscap', 'Running OpenSCAP'), ('parsing_results', 'Parsing results'), ('completed', 'Completed'), ('cancel_requested', 'Cancel requested'), ('cancelled', 'Cancelled'), ('failed', 'Failed')], default='queued', max_length=32),
+            field=models.CharField(choices=[('queued', 'Queued'), ('claimed', 'Claimed by worker'), ('installing_tools', 'Installing tools'), ('discovering_apps', 'Discovering apps'), ('preparing_target', 'Preparing target'), ('building_sbom', 'Building SBOM'), ('running_grype', 'Running Grype'), ('running_trivy', 'Running Trivy'), ('running_lynis', 'Running Lynis'), ('parsing_results', 'Parsing results'), ('completed', 'Completed'), ('cancel_requested', 'Cancel requested'), ('cancelled', 'Cancelled'), ('failed', 'Failed')], default='queued', max_length=32),
         ),
         migrations.CreateModel(
             name='ComplianceFinding',

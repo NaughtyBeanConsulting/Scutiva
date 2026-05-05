@@ -18,7 +18,7 @@ from servers.models import Application, Server
 
 from .forms import QueueScanJobForm, ScanProfileForm
 from .models import ComplianceFinding, ScanJob, ScanProfile
-from .services import enqueue_scan_job, generate_installer_script, update_job_progress
+from .services import enqueue_scan_job, generate_installer_script, queue_scheduled_scans, update_job_progress
 
 
 JOB_OUTPUT_PREVIEW_LIMIT = 5000
@@ -365,6 +365,14 @@ class RetryScanJobView(LoginRequiredMixin, View):
             user=request.user,
         )
         return render_action_response(request, f"Queued retry job #{retry_job.pk} from job #{job.pk}.")
+
+
+class QueueScheduledScansView(LoginRequiredMixin, View):
+    def post(self, request, *args, **kwargs):
+        queued_jobs = queue_scheduled_scans(reference_time=timezone.now())
+        if not queued_jobs:
+            return render_action_response(request, "No scheduled scans were due. Make sure the server is installed and the profile schedule is not Manual.")
+        return render_action_response(request, f"Queued {len(queued_jobs)} scheduled scan job(s).")
 
 
 class InstallerScriptView(LoginRequiredMixin, TemplateView):

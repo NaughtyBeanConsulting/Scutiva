@@ -31,8 +31,6 @@ class ScanProfile(TimeStampedModel):
     enable_grype = models.BooleanField(default=True)
     enable_trivy = models.BooleanField(default=True)
     enable_lynis = models.BooleanField(default=True)
-    enable_openscap = models.BooleanField(default=True)
-    openscap_profile = models.CharField(max_length=255, default="xccdf_org.ssgproject.content_profile_cis_level1_server")
     include_dev_dependencies = models.BooleanField(default=False)
     severity_threshold = models.CharField(max_length=16, choices=SeverityThreshold.choices, default=SeverityThreshold.MEDIUM)
     include_paths = models.TextField(blank=True)
@@ -60,7 +58,6 @@ class ScannerInstallation(TimeStampedModel):
     grype_version = models.CharField(max_length=64, blank=True)
     trivy_version = models.CharField(max_length=64, blank=True)
     lynis_version = models.CharField(max_length=64, blank=True)
-    openscap_version = models.CharField(max_length=128, blank=True)
     last_install_date = models.DateTimeField(null=True, blank=True)
     install_logs = models.TextField(blank=True)
 
@@ -119,7 +116,6 @@ class ScanJob(TimeStampedModel):
         RUNNING_GRYPE = "running_grype", "Running Grype"
         RUNNING_TRIVY = "running_trivy", "Running Trivy"
         RUNNING_LYNIS = "running_lynis", "Running Lynis"
-        RUNNING_OPENSCAP = "running_openscap", "Running OpenSCAP"
         PARSING_RESULTS = "parsing_results", "Parsing results"
         COMPLETED = "completed", "Completed"
         CANCEL_REQUESTED = "cancel_requested", "Cancel requested"
@@ -192,3 +188,18 @@ class ComplianceFinding(TimeStampedModel):
 
     def __str__(self):
         return f"{self.source_scanner}:{self.control_id}"
+
+
+class ScheduledScanDispatch(TimeStampedModel):
+    profile = models.ForeignKey(ScanProfile, on_delete=models.CASCADE, related_name="scheduled_dispatches")
+    server = models.ForeignKey("servers.Server", on_delete=models.CASCADE, related_name="scheduled_dispatches")
+    window_start = models.DateTimeField()
+    window_end = models.DateTimeField()
+    scan_job = models.OneToOneField("scanners.ScanJob", on_delete=models.SET_NULL, related_name="scheduled_dispatch", null=True, blank=True)
+
+    class Meta:
+        ordering = ["-window_start", "server__name"]
+        unique_together = ("profile", "server", "window_start", "window_end")
+
+    def __str__(self):
+        return f"{self.profile.name} -> {self.server.name} ({self.window_start:%Y-%m-%d})"

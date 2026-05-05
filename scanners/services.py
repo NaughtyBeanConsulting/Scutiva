@@ -1,8 +1,8 @@
 import json
 import re
 import shlex
-import xml.etree.ElementTree as ET
 from collections import Counter
+from datetime import timedelta
 from decimal import Decimal
 from hashlib import sha1
 from pathlib import Path
@@ -17,7 +17,7 @@ from servers.models import Application
 from servers.services import download_text, run_remote_command, upload_text
 from vulnerabilities.models import VulnerabilityFinding
 
-from .models import ComplianceFinding, ScanJob, ScanProfile, ScannerInstallation
+from .models import ComplianceFinding, ScanJob, ScanProfile, ScannerInstallation, ScheduledScanDispatch
 
 
 def _clamp_progress(value):
@@ -137,7 +137,9 @@ def generate_installer_script():
 
         export DEBIAN_FRONTEND=noninteractive
         apt-get update
-        apt-get install -y curl wget gnupg lsb-release ca-certificates jq lynis libopenscap8 openscap-scanner ssg-base
+        apt-get install -y curl wget gnupg lsb-release ca-certificates jq lynis
+
+    install -d -m 0755 /opt/scutiva /opt/scutiva/bin /opt/scutiva/tmp /var/log/scutiva
 
         curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
         curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
@@ -147,12 +149,15 @@ def generate_installer_script():
         apt-get update
         apt-get install -y trivy
 
+        cat >/etc/profile.d/scutiva-tools.sh <<'EOF'
+        export PATH=/usr/local/bin:$PATH
+        EOF
+
         echo "Installed versions:"
         syft version || true
         grype version || true
         trivy version || true
         lynis show version || true
-        oscap --version || true
         """
     ).strip()
 
@@ -251,6 +256,19 @@ def _extract_version(output, tool_name):
 
 def _save_text(path, content):
   path.write_text(content, encoding="utf-8")
+
+
+def _cleanup_remote_path(job, remote_path, *, sudo=False):
+  cleanup_result = run_remote_command(job.server, f"rm -rf {shlex.quote(remote_path)}", sudo=sudo, timeout=120)
+  if cleanup_result.exit_status != 0:
+    details = dict((job.progress_context or {}).get("details") or {})
+    cleanup_errors = list(details.get("cleanup_errors", []))
+    cleanup_errors.append({
+      "path": remote_path,
+      "stderr": cleanup_result.stderr.strip() or cleanup_result.stdout.strip() or "Remote cleanup failed.",
+    })
+    details["cleanup_errors"] = cleanup_errors[-5:]
+    update_job_progress(job, details=details, message=(job.progress_context or {}).get("last_message"))
 
 
 def _severity_value(value):
@@ -494,62 +512,6 @@ def _parse_lynis_report(job, report_text):
   return counts
 
 
-def _parse_openscap_results(job, xml_text, benchmark):
-  counts = Counter()
-  if not xml_text.strip():
-    return counts
-
-  root = ET.fromstring(xml_text)
-  rules = {}
-  for element in root.iter():
-    if element.tag.endswith("Rule"):
-      rule_id = element.attrib.get("id") or ""
-      if not rule_id:
-        continue
-      title = ""
-      description = ""
-      for child in element:
-        if child.tag.endswith("title") and not title:
-          title = (child.text or "").strip()
-        elif child.tag.endswith("description") and not description:
-          description = "".join(child.itertext()).strip()
-      rules[rule_id] = {
-        "title": title or rule_id,
-        "description": description,
-        "severity": _compliance_severity_value(element.attrib.get("severity")),
-      }
-
-  for element in root.iter():
-    if not element.tag.endswith("rule-result"):
-      continue
-    control_id = element.attrib.get("idref") or _stable_control_id("openscap", ET.tostring(element, encoding="unicode"))
-    result_value = ""
-    for child in element:
-      if child.tag.endswith("result"):
-        result_value = (child.text or "").strip().lower()
-        break
-    if result_value not in {"fail", "error", "unknown", "notchecked"}:
-      continue
-    metadata = rules.get(control_id, {})
-    _upsert_compliance_finding(
-      job,
-      "openscap",
-      control_id,
-      {
-        "benchmark": benchmark,
-        "title": metadata.get("title") or f"OpenSCAP rule {control_id}",
-        "severity": metadata.get("severity") or ComplianceFinding.Severity.MEDIUM,
-        "resource": job.server.host,
-        "description": metadata.get("description") or f"Rule result: {result_value}",
-        "remediation": f"Review and remediate rule {control_id} for benchmark {benchmark}.",
-        "references": [],
-        "raw_output": ET.tostring(element, encoding="unicode"),
-      },
-    )
-    counts["openscap"] += 1
-  return counts
-
-
 def enqueue_scan_job(*, server, queue_name, user=None, application=None, scan_profile=None):
   job = ScanJob.objects.create(
     server=server,
@@ -564,6 +526,59 @@ def enqueue_scan_job(*, server, queue_name, user=None, application=None, scan_pr
   return job
 
 
+def get_schedule_window(profile_schedule, reference_time=None):
+  now = reference_time or timezone.now()
+  window_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+  if profile_schedule == ScanProfile.Schedule.DAILY:
+    window_end = window_start + timedelta(days=1)
+  elif profile_schedule == ScanProfile.Schedule.WEEKLY:
+    window_start = window_start - timedelta(days=window_start.weekday())
+    window_end = window_start + timedelta(days=7)
+  elif profile_schedule == ScanProfile.Schedule.MONTHLY:
+    window_start = window_start.replace(day=1)
+    next_month = (window_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    window_end = next_month
+  else:
+    raise ValueError(f"Unsupported schedule: {profile_schedule}")
+
+  return window_start, window_end
+
+
+def queue_scheduled_scans(reference_time=None):
+  reference_time = reference_time or timezone.now()
+  queued_jobs = []
+  profiles = ScanProfile.objects.filter(schedule__in=[
+    ScanProfile.Schedule.DAILY,
+    ScanProfile.Schedule.WEEKLY,
+    ScanProfile.Schedule.MONTHLY,
+  ]).order_by("name")
+  servers = list(ScannerInstallation.objects.select_related("server").filter(status=ScannerInstallation.Status.INSTALLED, server__is_active=True))
+
+  for profile in profiles:
+    window_start, window_end = get_schedule_window(profile.schedule, reference_time=reference_time)
+    for installation in servers:
+      dispatch, created = ScheduledScanDispatch.objects.get_or_create(
+        profile=profile,
+        server=installation.server,
+        window_start=window_start,
+        window_end=window_end,
+      )
+      if not created:
+        continue
+
+      job = enqueue_scan_job(
+        server=installation.server,
+        queue_name=ScanJob.Queue.SCAN,
+        scan_profile=profile,
+      )
+      dispatch.scan_job = job
+      dispatch.save(update_fields=["scan_job", "updated_at"])
+      queued_jobs.append(job)
+
+  return queued_jobs
+
+
 def execute_install_job(job):
   update_job_progress(job, stage=ScanJob.Stage.INSTALLING_TOOLS, progress_percent=15, message="Uploading and running installer.")
   ensure_job_not_cancelled(job)
@@ -572,49 +587,51 @@ def execute_install_job(job):
   installation.save(update_fields=["status", "updated_at"])
 
   remote_script_path = f"/tmp/scutiva-install-{job.pk}.sh"
-  upload_text(job.server, generate_installer_script(), remote_script_path, mode=0o700)
-  result = run_job_command(
-    job,
-    remote_script_path,
-    stage=ScanJob.Stage.INSTALLING_TOOLS,
-    progress_percent=30,
-    message="Running installer on remote server.",
-    sudo=True,
-    timeout=1800,
-  )
+  try:
+    upload_text(job.server, generate_installer_script(), remote_script_path, mode=0o700)
+    result = run_job_command(
+      job,
+      remote_script_path,
+      stage=ScanJob.Stage.INSTALLING_TOOLS,
+      progress_percent=30,
+      message="Running installer on remote server.",
+      sudo=True,
+      timeout=1800,
+    )
 
-  job_dir = _job_media_dir(job)
-  _save_text(job_dir / "install.log", result.stdout + "\n" + result.stderr)
+    job_dir = _job_media_dir(job)
+    _save_text(job_dir / "install.log", result.stdout + "\n" + result.stderr)
 
-  if result.exit_status != 0:
-    installation.status = ScannerInstallation.Status.FAILED
-    installation.install_logs = result.stdout + "\n" + result.stderr
+    if result.exit_status != 0:
+      installation.status = ScannerInstallation.Status.FAILED
+      installation.install_logs = result.stdout + "\n" + result.stderr
+      installation.save()
+      raise RuntimeError(result.stderr or result.stdout or "Scanner installation failed.")
+
+    ensure_job_not_cancelled(job)
+    version_output = run_job_command(
+      job,
+      "syft version && grype version && trivy version && lynis show version",
+      stage=ScanJob.Stage.INSTALLING_TOOLS,
+      progress_percent=80,
+      message="Collecting installed scanner versions.",
+      sudo=False,
+      timeout=120,
+    )
+    combined_output = result.stdout + "\n" + version_output.stdout
+    installation.status = ScannerInstallation.Status.INSTALLED
+    installation.syft_version = _extract_version(combined_output, "syft")
+    installation.grype_version = _extract_version(combined_output, "grype")
+    installation.trivy_version = _extract_version(combined_output, "trivy")
+    installation.lynis_version = _extract_version(combined_output, "lynis")
+    installation.last_install_date = timezone.now()
+    installation.install_logs = combined_output + "\n" + result.stderr + version_output.stderr
     installation.save()
-    raise RuntimeError(result.stderr or result.stdout or "Scanner installation failed.")
-
-  ensure_job_not_cancelled(job)
-  version_output = run_job_command(
-    job,
-    "syft version && grype version && trivy version && lynis show version && oscap --version",
-    stage=ScanJob.Stage.INSTALLING_TOOLS,
-    progress_percent=80,
-    message="Collecting installed scanner versions.",
-    sudo=False,
-    timeout=120,
-  )
-  combined_output = result.stdout + "\n" + version_output.stdout
-  installation.status = ScannerInstallation.Status.INSTALLED
-  installation.syft_version = _extract_version(combined_output, "syft")
-  installation.grype_version = _extract_version(combined_output, "grype")
-  installation.trivy_version = _extract_version(combined_output, "trivy")
-  installation.lynis_version = _extract_version(combined_output, "lynis")
-  installation.openscap_version = _extract_version(combined_output, "oscap")
-  installation.last_install_date = timezone.now()
-  installation.install_logs = combined_output + "\n" + result.stderr + version_output.stderr
-  installation.save()
-  job.raw_output_path = str(job_dir)
-  job.tools_used = ["syft", "grype", "trivy", "lynis", "openscap"]
-  job.parsed_findings = [{"action": "install", "status": "installed"}]
+    job.raw_output_path = str(job_dir)
+    job.tools_used = ["syft", "grype", "trivy", "lynis"]
+    job.parsed_findings = [{"action": "install", "status": "installed"}]
+  finally:
+    _cleanup_remote_path(job, remote_script_path, sudo=True)
 
 
 def execute_discovery_job(job):
@@ -626,47 +643,50 @@ def execute_discovery_job(job):
 
   script = DISCOVERY_SCRIPT.format(roots=json.dumps(roots))
   remote_python = "python3 - <<'PY'\n" + script + "\nPY"
-  result = run_job_command(
-    job,
-    remote_python,
-    stage=ScanJob.Stage.DISCOVERING_APPS,
-    progress_percent=55,
-    message="Discovering application roots and manifests.",
-    sudo=False,
-    timeout=900,
-  )
-  job_dir = _job_media_dir(job)
-  _save_text(job_dir / "discovery.json", result.stdout)
-  if result.exit_status != 0:
-    raise RuntimeError(result.stderr or "Application discovery failed.")
-
-  payload = json.loads(result.stdout or "[]")
-  update_job_progress(job, stage=ScanJob.Stage.PARSING_RESULTS, progress_percent=85, message="Persisting discovered applications.")
-  applications = []
-  for item in payload:
-    application, _ = Application.objects.update_or_create(
-      server=job.server,
-      path=item["path"],
-      defaults={
-        "name": item["name"],
-        "project_type": item.get("project_type", ""),
-        "framework": item.get("framework", ""),
-        "language": item.get("language", ""),
-        "dependency_files": item.get("dependency_files", []),
-        "git_repository_url": item.get("git_repository_url", ""),
-        "git_branch": item.get("git_branch", ""),
-        "git_commit_hash": item.get("git_commit_hash", ""),
-        "package_manager": item.get("package_manager", ""),
-        "dockerfile_present": item.get("dockerfile_present", False),
-        "docker_compose_present": item.get("docker_compose_present", False),
-        "last_discovered_at": timezone.now(),
-      },
+  try:
+    result = run_job_command(
+      job,
+      remote_python,
+      stage=ScanJob.Stage.DISCOVERING_APPS,
+      progress_percent=55,
+      message="Discovering application roots and manifests.",
+      sudo=False,
+      timeout=900,
     )
-    applications.append({"name": application.name, "path": application.path})
+    job_dir = _job_media_dir(job)
+    _save_text(job_dir / "discovery.json", result.stdout)
+    if result.exit_status != 0:
+      raise RuntimeError(result.stderr or "Application discovery failed.")
 
-  job.raw_output_path = str(job_dir)
-  job.tools_used = ["discovery"]
-  job.parsed_findings = applications
+    payload = json.loads(result.stdout or "[]")
+    update_job_progress(job, stage=ScanJob.Stage.PARSING_RESULTS, progress_percent=85, message="Persisting discovered applications.")
+    applications = []
+    for item in payload:
+      application, _ = Application.objects.update_or_create(
+        server=job.server,
+        path=item["path"],
+        defaults={
+          "name": item["name"],
+          "project_type": item.get("project_type", ""),
+          "framework": item.get("framework", ""),
+          "language": item.get("language", ""),
+          "dependency_files": item.get("dependency_files", []),
+          "git_repository_url": item.get("git_repository_url", ""),
+          "git_branch": item.get("git_branch", ""),
+          "git_commit_hash": item.get("git_commit_hash", ""),
+          "package_manager": item.get("package_manager", ""),
+          "dockerfile_present": item.get("dockerfile_present", False),
+          "docker_compose_present": item.get("docker_compose_present", False),
+          "last_discovered_at": timezone.now(),
+        },
+      )
+      applications.append({"name": application.name, "path": application.path})
+
+    job.raw_output_path = str(job_dir)
+    job.tools_used = ["discovery"]
+    job.parsed_findings = applications
+  finally:
+    _cleanup_remote_path(job, "/tmp/scutiva-discovery.json", sudo=False)
 
 
 def execute_scan_job(job):
@@ -678,162 +698,127 @@ def execute_scan_job(job):
   scan_warnings = []
   quoted_target_path = shlex.quote(target_path)
 
-  update_job_progress(job, stage=ScanJob.Stage.PREPARING_TARGET, progress_percent=10, message="Preparing remote workspace.")
-  ensure_job_not_cancelled(job)
-  setup_result = run_job_command(
-    job,
-    f"mkdir -p {remote_dir}",
-    stage=ScanJob.Stage.PREPARING_TARGET,
-    progress_percent=18,
-    message="Creating remote job directory.",
-    sudo=True,
-    timeout=120,
-  )
-  if setup_result.exit_status != 0:
-    raise RuntimeError(setup_result.stderr or "Failed to prepare remote scan directory.")
-
-  if not profile or profile.enable_syft:
-    tools_used.append("syft")
-    update_job_progress(job, stage=ScanJob.Stage.BUILDING_SBOM, progress_percent=35, message="Building SBOM with Syft.")
+  try:
+    update_job_progress(job, stage=ScanJob.Stage.PREPARING_TARGET, progress_percent=10, message="Preparing remote workspace.")
     ensure_job_not_cancelled(job)
-    syft_command = f"syft {quoted_target_path} -o json > {remote_dir}/sbom.json"
-    result = run_job_command(
+    setup_result = run_job_command(
       job,
-      syft_command,
-      stage=ScanJob.Stage.BUILDING_SBOM,
-      progress_percent=42,
-      message="Running Syft to generate SBOM.",
+      f"mkdir -p {remote_dir}",
+      stage=ScanJob.Stage.PREPARING_TARGET,
+      progress_percent=18,
+      message="Creating remote job directory.",
       sudo=True,
-      timeout=1800,
+      timeout=120,
     )
-    if result.exit_status != 0:
-      raise RuntimeError(result.stderr or "Syft scan failed.")
-    payload = download_text(job.server, f"{remote_dir}/sbom.json")
-    _save_text(job_dir / "sbom.json", payload)
-    SBOMArtifact.objects.create(
-      server=job.server,
-      application=job.application,
-      generated_by="syft",
-      format="json",
-      file_path=str(job_dir / "sbom.json"),
-      package_count=len(json.loads(payload or "{}").get("artifacts", [])),
-      related_scan=job,
-    )
+    if setup_result.exit_status != 0:
+      raise RuntimeError(setup_result.stderr or "Failed to prepare remote scan directory.")
 
-  findings_summary = Counter()
-  if not profile or profile.enable_grype:
-    tools_used.append("grype")
-    update_job_progress(job, stage=ScanJob.Stage.RUNNING_GRYPE, progress_percent=58, message="Running Grype against the SBOM.")
-    ensure_job_not_cancelled(job)
-    grype_command = f"grype sbom:{remote_dir}/sbom.json -o json > {remote_dir}/grype.json"
-    result = run_job_command(
-      job,
-      grype_command,
-      stage=ScanJob.Stage.RUNNING_GRYPE,
-      progress_percent=64,
-      message="Executing Grype scan.",
-      sudo=True,
-      timeout=1800,
-    )
-    if result.exit_status == 0:
-      update_job_progress(job, stage=ScanJob.Stage.PARSING_RESULTS, progress_percent=72, message="Parsing Grype results.")
-      payload = json.loads(download_text(job.server, f"{remote_dir}/grype.json") or "{}")
-      _save_text(job_dir / "grype.json", json.dumps(payload, indent=2))
-      findings_summary["grype"] = _parse_grype_results(job, payload)
-    else:
-      findings_summary["grype_error"] = 1
-      scan_warnings.append("Grype scan did not complete successfully.")
+    if not profile or profile.enable_syft:
+      tools_used.append("syft")
+      update_job_progress(job, stage=ScanJob.Stage.BUILDING_SBOM, progress_percent=35, message="Building SBOM with Syft.")
+      ensure_job_not_cancelled(job)
+      syft_command = f"syft {quoted_target_path} -o json > {remote_dir}/sbom.json"
+      result = run_job_command(
+        job,
+        syft_command,
+        stage=ScanJob.Stage.BUILDING_SBOM,
+        progress_percent=42,
+        message="Running Syft to generate SBOM.",
+        sudo=True,
+        timeout=1800,
+      )
+      if result.exit_status != 0:
+        raise RuntimeError(result.stderr or "Syft scan failed.")
+      payload = download_text(job.server, f"{remote_dir}/sbom.json")
+      _save_text(job_dir / "sbom.json", payload)
+      SBOMArtifact.objects.create(
+        server=job.server,
+        application=job.application,
+        generated_by="syft",
+        format="json",
+        file_path=str(job_dir / "sbom.json"),
+        package_count=len(json.loads(payload or "{}").get("artifacts", [])),
+        related_scan=job,
+      )
 
-  if not profile or profile.enable_trivy:
-    tools_used.append("trivy")
-    update_job_progress(job, stage=ScanJob.Stage.RUNNING_TRIVY, progress_percent=78, message="Running Trivy filesystem scan.")
-    ensure_job_not_cancelled(job)
-    trivy_command = f"trivy fs --skip-db-update --scanners vuln,misconfig,secret,license --format json -o {remote_dir}/trivy.json {quoted_target_path}"
-    result = run_job_command(
-      job,
-      trivy_command,
-      stage=ScanJob.Stage.RUNNING_TRIVY,
-      progress_percent=84,
-      message="Executing Trivy scan.",
-      sudo=True,
-      timeout=1800,
-    )
-    if result.exit_status == 0:
-      update_job_progress(job, stage=ScanJob.Stage.PARSING_RESULTS, progress_percent=92, message="Parsing Trivy results.")
-      payload = json.loads(download_text(job.server, f"{remote_dir}/trivy.json") or "{}")
-      _save_text(job_dir / "trivy.json", json.dumps(payload, indent=2))
-      findings_summary["trivy"] = _parse_trivy_results(job, payload)
-      findings_summary.update(_parse_trivy_compliance_results(job, payload))
-    else:
-      findings_summary["trivy_error"] = 1
-      scan_warnings.append("Trivy scan did not complete successfully.")
-
-  if not profile or profile.enable_lynis:
-    tools_used.append("lynis")
-    update_job_progress(job, stage=ScanJob.Stage.RUNNING_LYNIS, progress_percent=90, message="Running Lynis host hardening audit.")
-    ensure_job_not_cancelled(job)
-    lynis_command = f"lynis audit system --quick --quiet --report-file {remote_dir}/lynis-report.dat --logfile {remote_dir}/lynis.log"
-    result = run_job_command(
-      job,
-      lynis_command,
-      stage=ScanJob.Stage.RUNNING_LYNIS,
-      progress_percent=93,
-      message="Executing Lynis audit.",
-      sudo=True,
-      timeout=2400,
-    )
-    if result.exit_status == 0:
-      report_text = download_text(job.server, f"{remote_dir}/lynis-report.dat") or ""
-      log_text = download_text(job.server, f"{remote_dir}/lynis.log") or ""
-      _save_text(job_dir / "lynis-report.dat", report_text)
-      _save_text(job_dir / "lynis.log", log_text)
-      findings_summary.update(_parse_lynis_report(job, report_text))
-    else:
-      findings_summary["lynis_error"] = 1
-      scan_warnings.append("Lynis audit did not complete successfully.")
-
-  if not profile or profile.enable_openscap:
-    tools_used.append("openscap")
-    update_job_progress(job, stage=ScanJob.Stage.RUNNING_OPENSCAP, progress_percent=95, message="Running OpenSCAP benchmark evaluation.")
-    ensure_job_not_cancelled(job)
-    openscap_profile = profile.openscap_profile if profile and profile.openscap_profile else "xccdf_org.ssgproject.content_profile_cis_level1_server"
-    openscap_command = (
-      "bash -lc '"
-      "set +e; "
-      "DATASTREAM=$(find /usr/share/xml/scap/ssg/content -maxdepth 1 -type f -name \"ssg-ubuntu*-ds.xml\" | sort | tail -n 1); "
-      "if [[ -z \"$DATASTREAM\" ]]; then echo \"No Ubuntu SCAP datastream found.\"; exit 2; fi; "
-      f"oscap xccdf eval --profile {shlex.quote(openscap_profile)} --results {remote_dir}/oscap-results.xml --report {remote_dir}/oscap-report.html \"$DATASTREAM\"; "
-      "code=$?; echo __SCUTIVA_OSCAP_EXIT__=$code; exit 0'"
-    )
-    result = run_job_command(
-      job,
-      openscap_command,
-      stage=ScanJob.Stage.RUNNING_OPENSCAP,
-      progress_percent=97,
-      message="Executing OpenSCAP benchmark evaluation.",
-      sudo=True,
-      timeout=3600,
-    )
-    if result.exit_status == 0:
-      xml_text = download_text(job.server, f"{remote_dir}/oscap-results.xml") or ""
-      html_text = download_text(job.server, f"{remote_dir}/oscap-report.html") or ""
-      if xml_text:
-        _save_text(job_dir / "oscap-results.xml", xml_text)
-      if html_text:
-        _save_text(job_dir / "oscap-report.html", html_text)
-      if xml_text:
-        findings_summary.update(_parse_openscap_results(job, xml_text, openscap_profile))
+    findings_summary = Counter()
+    if not profile or profile.enable_grype:
+      tools_used.append("grype")
+      update_job_progress(job, stage=ScanJob.Stage.RUNNING_GRYPE, progress_percent=58, message="Running Grype against the SBOM.")
+      ensure_job_not_cancelled(job)
+      grype_command = f"grype sbom:{remote_dir}/sbom.json -o json > {remote_dir}/grype.json"
+      result = run_job_command(
+        job,
+        grype_command,
+        stage=ScanJob.Stage.RUNNING_GRYPE,
+        progress_percent=64,
+        message="Executing Grype scan.",
+        sudo=True,
+        timeout=1800,
+      )
+      if result.exit_status == 0:
+        update_job_progress(job, stage=ScanJob.Stage.PARSING_RESULTS, progress_percent=72, message="Parsing Grype results.")
+        payload = json.loads(download_text(job.server, f"{remote_dir}/grype.json") or "{}")
+        _save_text(job_dir / "grype.json", json.dumps(payload, indent=2))
+        findings_summary["grype"] = _parse_grype_results(job, payload)
       else:
-        findings_summary["openscap_error"] = 1
-        scan_warnings.append("OpenSCAP did not produce results output.")
-    else:
-      findings_summary["openscap_error"] = 1
-      scan_warnings.append("OpenSCAP benchmark evaluation did not complete successfully.")
+        findings_summary["grype_error"] = 1
+        scan_warnings.append("Grype scan did not complete successfully.")
 
-  job.raw_output_path = str(job_dir)
-  job.tools_used = tools_used
-  job._scan_warnings = scan_warnings
-  job.parsed_findings = [{"source": key, "count": value} for key, value in findings_summary.items()]
+    if not profile or profile.enable_trivy:
+      tools_used.append("trivy")
+      update_job_progress(job, stage=ScanJob.Stage.RUNNING_TRIVY, progress_percent=78, message="Running Trivy filesystem scan.")
+      ensure_job_not_cancelled(job)
+      trivy_command = f"trivy fs --skip-db-update --scanners vuln,misconfig,secret,license --format json -o {remote_dir}/trivy.json {quoted_target_path}"
+      result = run_job_command(
+        job,
+        trivy_command,
+        stage=ScanJob.Stage.RUNNING_TRIVY,
+        progress_percent=84,
+        message="Executing Trivy scan.",
+        sudo=True,
+        timeout=1800,
+      )
+      if result.exit_status == 0:
+        update_job_progress(job, stage=ScanJob.Stage.PARSING_RESULTS, progress_percent=92, message="Parsing Trivy results.")
+        payload = json.loads(download_text(job.server, f"{remote_dir}/trivy.json") or "{}")
+        _save_text(job_dir / "trivy.json", json.dumps(payload, indent=2))
+        findings_summary["trivy"] = _parse_trivy_results(job, payload)
+        findings_summary.update(_parse_trivy_compliance_results(job, payload))
+      else:
+        findings_summary["trivy_error"] = 1
+        scan_warnings.append("Trivy scan did not complete successfully.")
+
+    if not profile or profile.enable_lynis:
+      tools_used.append("lynis")
+      update_job_progress(job, stage=ScanJob.Stage.RUNNING_LYNIS, progress_percent=90, message="Running Lynis host hardening audit.")
+      ensure_job_not_cancelled(job)
+      lynis_command = f"lynis audit system --quick --quiet --report-file {remote_dir}/lynis-report.dat --logfile {remote_dir}/lynis.log"
+      result = run_job_command(
+        job,
+        lynis_command,
+        stage=ScanJob.Stage.RUNNING_LYNIS,
+        progress_percent=93,
+        message="Executing Lynis audit.",
+        sudo=True,
+        timeout=2400,
+      )
+      if result.exit_status == 0:
+        report_text = download_text(job.server, f"{remote_dir}/lynis-report.dat") or ""
+        log_text = download_text(job.server, f"{remote_dir}/lynis.log") or ""
+        _save_text(job_dir / "lynis-report.dat", report_text)
+        _save_text(job_dir / "lynis.log", log_text)
+        findings_summary.update(_parse_lynis_report(job, report_text))
+      else:
+        findings_summary["lynis_error"] = 1
+        scan_warnings.append("Lynis audit did not complete successfully.")
+
+    job.raw_output_path = str(job_dir)
+    job.tools_used = tools_used
+    job._scan_warnings = scan_warnings
+    job.parsed_findings = [{"source": key, "count": value} for key, value in findings_summary.items()]
+  finally:
+    _cleanup_remote_path(job, remote_dir, sudo=True)
 
 
 def execute_scan_job_pipeline(job):

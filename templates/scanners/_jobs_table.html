@@ -209,21 +209,3 @@
         </div>
     </div>
 </div>
-*** Add File: /home/naughtybean/github/Scutiva/templates/scanners/detail.html
-{% extends 'base.html' %}
-
-{% block title %}Scan Job #{{ job.pk }} | Scutiva{% endblock %}
-{% block page_heading %}Scan Job #{{ job.pk }}{% endblock %}
-
-{% block content %}
-<section class="space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-4">
-        <div>
-            <p class="text-xs uppercase tracking-[0.18em] text-cyan-300/70">Execution detail</p>
-            <p class="mt-2 text-sm text-slate-400">Inspect progress, raw outputs, and failure diagnostics for {{ job.server.name }}.</p>
-        </div>
-        <a class="btn-secondary" href="{% url 'scanners:list' %}">Back to scans</a>
-    </div>
-    {% include 'scanners/_job_detail_panel.html' %}
-</section>
-{% endblock %}

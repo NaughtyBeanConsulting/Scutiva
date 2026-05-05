@@ -5,6 +5,11 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Scutiva{% endblock %}</title>
+    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -17,7 +22,7 @@
     <div class="min-h-screen lg:grid lg:grid-cols-[280px_minmax(0,1fr)]">
         <aside class="border-b border-slate-800/80 bg-slate-950/70 px-6 py-6 backdrop-blur lg:border-b-0 lg:border-r">
             <div class="flex items-center gap-3">
-                <img src="{% static 'img/scutiva-logo.svg' %}" alt="Scutiva" class="h-12 w-12">
+                <img src="{% static 'img/Scutiva1024x1024.png' %}" alt="Scutiva" class="h-12 w-12 rounded-xl object-contain">
                 <div>
                     <p class="font-display text-xl font-bold tracking-tight">Scutiva</p>
                     <p class="text-xs uppercase tracking-[0.2em] text-cyan-300/70">CVE Operations Portal</p>

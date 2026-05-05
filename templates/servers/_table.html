@@ -21,6 +21,7 @@
                     <td>
                         <div class="flex flex-wrap gap-2">
                             <button class="btn-secondary px-3 py-2 text-xs" hx-get="{% url 'servers:edit' server.pk %}" hx-target="#server-workspace" hx-swap="innerHTML">Edit</button>
+                            <button class="btn-secondary px-3 py-2 text-xs" hx-post="{% url 'scanners:server-job' server.pk 'install' %}" hx-target="#action-response-sink" hx-swap="innerHTML">Install on server</button>
                             <button class="btn-secondary px-3 py-2 text-xs" hx-post="{% url 'scanners:quick-queue' 'server' server.pk %}" hx-target="#action-response-sink" hx-swap="innerHTML">Run once now</button>
                         </div>
                     </td>

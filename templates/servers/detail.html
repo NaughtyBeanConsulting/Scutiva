@@ -13,16 +13,18 @@
             </div>
             <div class="flex flex-wrap gap-3">
                 <a class="btn-secondary" href="{% url 'scanners:installer-script' %}">Installer script</a>
-                <button class="btn-secondary" hx-post="{% url 'scanners:server-job' server.pk 'install' %}" hx-target="#server-job-feedback" hx-swap="innerHTML">Queue install</button>
+                <button class="btn-secondary" hx-post="{% url 'scanners:server-job' server.pk 'install' %}" hx-target="#server-job-feedback" hx-swap="innerHTML">Install on server</button>
                 <button class="btn-secondary" hx-post="{% url 'scanners:server-job' server.pk 'discovery' %}" hx-target="#server-job-feedback" hx-swap="innerHTML">Queue discovery</button>
             </div>
         </div>
+        <p class="mb-4 text-sm text-slate-400">Scutiva stays agentless: this uploads the Ubuntu installer over SSH, runs it with sudo, and prepares Lynis, Syft, Grype, and Trivy for remote scans.</p>
         <div id="server-job-feedback" class="mb-4"></div>
         <dl class="grid gap-4 md:grid-cols-2">
             <div class="meta-card"><dt>Host</dt><dd>{{ server.host }}:{{ server.ssh_port }}</dd></div>
             <div class="meta-card"><dt>Environment</dt><dd>{{ server.get_environment_display }}</dd></div>
             <div class="meta-card"><dt>Authentication</dt><dd>{{ server.get_authentication_type_display }}</dd></div>
             <div class="meta-card"><dt>Last connection</dt><dd>{{ server.last_successful_connection_at|default:'Never' }}</dd></div>
+            <div class="meta-card md:col-span-2"><dt>Host key verification</dt><dd>{% if host_key_pinned %}Pinned {{ server.host_key_algorithm }} fingerprint {{ server.host_key_fingerprint }}{% elif server.environment == 'production' %}Required but not captured{% else %}Trust on first use for non-production{% endif %}</dd></div>
             <div class="meta-card md:col-span-2"><dt>Discovery roots</dt><dd>{{ server.codebase_paths|linebreaksbr }}</dd></div>
             <div class="meta-card md:col-span-2"><dt>Tags</dt><dd>{{ server.tags|default:'No tags' }}</dd></div>
             <div class="meta-card md:col-span-2"><dt>Description</dt><dd>{{ server.description|default:'No description provided.' }}</dd></div>

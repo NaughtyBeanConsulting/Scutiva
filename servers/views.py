@@ -62,6 +62,7 @@ class ServerDetailView(LoginRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         context["recent_jobs"] = self.object.scan_jobs.order_by("-created_at")[:8]
         context["installation"] = getattr(self.object, "scanner_installation", None)
+        context["host_key_pinned"] = bool(self.object.host_key_fingerprint)
         return context
 
 
@@ -110,8 +111,8 @@ class TestConnectionView(LoginRequiredMixin, View):
                 ).content
             )
 
-        ok, message = test_ssh_connection(form.cleaned_data)
-        return render(request, "servers/_connection_result.html", {"ok": ok, "message": message})
+        ok, message, host_key_data = test_ssh_connection(form.cleaned_data)
+        return render(request, "servers/_connection_result.html", {"ok": ok, "message": message, **host_key_data})
 
 
 class ServerInstallerContextView(LoginRequiredMixin, DetailView):
