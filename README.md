@@ -1,7 +1,11 @@
 # Scutiva
 
 <p align="center">
-	<img src="static/img/Scutiva1024x1024.png" alt="Scutiva logo" width="180">
+	<picture>
+		<source media="(prefers-color-scheme: light)" srcset="static/img/ScutivaWhite1024x1024.png">
+		<source media="(prefers-color-scheme: dark)" srcset="static/img/Scutiva1024x1024.png">
+		<img src="static/img/Scutiva1024x1024.png" alt="Scutiva logo" width="180">
+	</picture>
 </p>
 
 Scutiva is an open-source, self-hosted security operations portal for Linux hosts and application codebases. It uses an agentless SSH execution model to onboard servers, install its toolchain remotely, generate SBOMs, correlate package vulnerabilities, run Linux posture checks, and review findings in a live operator workflow.
@@ -16,6 +20,8 @@ Scutiva is an open-source, self-hosted security operations portal for Linux host
 
 ## Current scanning layers
 
+Scutiva uses four retained tools across its scanning flow: `Lynis`, `Syft`, `Grype`, and `Trivy`.
+
 ### VM / OS posture and host hardening
 
 Scutiva uses `Lynis` to perform lightweight Linux posture and hardening reviews on onboarded Ubuntu and Linux hosts.
@@ -24,6 +30,7 @@ Scutiva uses `Lynis` to perform lightweight Linux posture and hardening reviews 
 
 Scutiva uses:
 
+- `Lynis` to complement package and SBOM review with Linux posture and hardening coverage
 - `Syft` to generate SBOM artifacts
 - `Grype` to correlate package vulnerabilities from the generated SBOM
 - `Trivy` to scan filesystem targets for vulnerabilities, misconfigurations, secrets, and license signals
@@ -130,4 +137,5 @@ python manage.py schedule_scan_jobs
 
 - GitHub: https://github.com/NaughtyBeanConsulting/Scutiva
 - LinkedIn: https://linkedin.com/company/scutiva-oss
+- Support Scutiva: https://donations.scutiva.com
 - Contact: hello@scutiva.com

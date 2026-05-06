@@ -2,6 +2,8 @@
 
 Thank you for contributing to Scutiva.
 
+If you want to support the project directly, you can use the donation page: https://donations.scutiva.com
+
 ## Ground rules
 
 - Be respectful and assume good intent.
