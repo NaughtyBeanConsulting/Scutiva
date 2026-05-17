@@ -4,19 +4,112 @@
 {% block page_heading %}Workspace Settings{% endblock %}
 
 {% block content %}
-<section class="grid gap-6 lg:grid-cols-2">
+<div class="space-y-6">
+
+    {# ── User profile ─────────────────────────────────────────────────────── #}
     <div class="panel">
-        <h2 class="panel-title">Environment defaults</h2>
-        <div class="mt-4 space-y-3 text-sm text-slate-300">
-            <div class="meta-card"><dt>Authentication</dt><dd>Email and password via Django auth</dd></div>
-            <div class="meta-card"><dt>Queue</dt><dd>PostgreSQL worker queue using FOR UPDATE SKIP LOCKED</dd></div>
-            <div class="meta-card"><dt>Scanners</dt><dd>Syft, Grype, and Trivy</dd></div>
-            <div class="meta-card"><dt>SSH</dt><dd>Paramiko-based remote connectivity</dd></div>
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Your profile</h2>
+                <p class="panel-subtitle">Update your display name and email address.</p>
+            </div>
         </div>
+        <form method="post" action="{% url 'core:profile-update' %}" class="mt-5 grid gap-5 md:grid-cols-2">
+            {% csrf_token %}
+            {% for field in profile_form %}
+                <div>
+                    <label class="mb-2 block text-sm font-medium text-slate-200" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.errors %}<p class="mt-2 text-sm text-rose-300">{{ field.errors|join:', ' }}</p>{% endif %}
+                </div>
+            {% endfor %}
+            <div class="md:col-span-2">
+                <button type="submit" class="btn-primary">Save profile</button>
+            </div>
+        </form>
     </div>
+
+    {# ── Change password ───────────────────────────────────────────────────── #}
     <div class="panel">
-        <h2 class="panel-title">Project notes</h2>
-        <p class="mt-4 text-sm text-slate-300">This scaffold is optimized for a PostgreSQL-backed security portal with dark-mode UI, HTMX partial updates, and shared template/static/media directories for the next implementation phase.</p>
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Change password</h2>
+                <p class="panel-subtitle">Use a strong, unique password for your account.</p>
+            </div>
+        </div>
+        <form method="post" action="{% url 'core:password-update' %}" class="mt-5 grid gap-5 md:grid-cols-2">
+            {% csrf_token %}
+            {% for field in password_form %}
+                <div class="{% if forloop.last %}md:col-span-2{% endif %}">
+                    <label class="mb-2 block text-sm font-medium text-slate-200" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.help_text %}<p class="mt-1 text-xs text-slate-500">{{ field.help_text }}</p>{% endif %}
+                    {% if field.errors %}<p class="mt-2 text-sm text-rose-300">{{ field.errors|join:', ' }}</p>{% endif %}
+                </div>
+            {% endfor %}
+            <div class="md:col-span-2">
+                <button type="submit" class="btn-primary">Change password</button>
+            </div>
+        </form>
     </div>
-</section>
+
+    {# ── Organisation ─────────────────────────────────────────────────────── #}
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Organisation</h2>
+                <p class="panel-subtitle">{% if org %}Manage your organisation details.{% else %}Create an organisation to group your servers and reports.{% endif %}</p>
+            </div>
+        </div>
+        <form method="post" action="{% url 'core:org-update' %}" class="mt-5 grid gap-5 md:grid-cols-2">
+            {% csrf_token %}
+            {% for field in org_form %}
+                <div>
+                    <label class="mb-2 block text-sm font-medium text-slate-200" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.errors %}<p class="mt-2 text-sm text-rose-300">{{ field.errors|join:', ' }}</p>{% endif %}
+                </div>
+            {% endfor %}
+            <div class="md:col-span-2">
+                <button type="submit" class="btn-primary">{% if org %}Save organisation{% else %}Create organisation{% endif %}</button>
+            </div>
+        </form>
+    </div>
+
+    {# ── Default scan profile ─────────────────────────────────────────────── #}
+    <div class="panel">
+        <div class="panel-header">
+            <div>
+                <h2 class="panel-title">Default scan profile</h2>
+                <p class="panel-subtitle">Applied when queuing a scan without selecting a specific profile.</p>
+            </div>
+        </div>
+        <form method="post" action="{% url 'core:scan-profile-update' %}" class="mt-5 grid gap-5 md:grid-cols-2">
+            {% csrf_token %}
+            {% for field in scan_profile_form %}
+                <div>
+                    <label class="mb-2 block text-sm font-medium text-slate-200" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.help_text %}<p class="mt-1 text-xs text-slate-500">{{ field.help_text }}</p>{% endif %}
+                    {% if field.errors %}<p class="mt-2 text-sm text-rose-300">{{ field.errors|join:', ' }}</p>{% endif %}
+                </div>
+            {% endfor %}
+            <div class="md:col-span-2">
+                <button type="submit" class="btn-primary">Save default profile</button>
+            </div>
+        </form>
+    </div>
+
+    {# ── Environment info ─────────────────────────────────────────────────── #}
+    <div class="panel">
+        <h2 class="panel-title">Environment</h2>
+        <dl class="mt-5 grid gap-3 md:grid-cols-2">
+            <div class="meta-card"><dt>Authentication</dt><dd>Email and password via Django auth</dd></div>
+            <div class="meta-card"><dt>Queue</dt><dd>PostgreSQL worker — FOR UPDATE SKIP LOCKED</dd></div>
+            <div class="meta-card"><dt>Scanners</dt><dd>Syft · Grype · Trivy · Lynis</dd></div>
+            <div class="meta-card"><dt>SSH</dt><dd>Paramiko — host-key pinning for production servers</dd></div>
+        </dl>
+    </div>
+
+</div>
 {% endblock %}

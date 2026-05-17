@@ -1,4 +1,13 @@
 from django import forms
+from django.contrib.auth import get_user_model
+from django.contrib.auth.forms import PasswordChangeForm
+from django.utils.text import slugify
+
+from accounts.models import Organization
+from scanners.models import ScanProfile
+
+
+User = get_user_model()
 
 
 FIELD_CLASSES = {
@@ -23,6 +32,48 @@ def style_form_fields(form):
 
 
 class StyledFormMixin:
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        style_form_fields(self)
+
+
+class UserProfileForm(StyledFormMixin, forms.ModelForm):
+    class Meta:
+        model = User
+        fields = ["full_name", "email"]
+
+    def clean_email(self):
+        email = self.cleaned_data["email"]
+        if User.objects.exclude(pk=self.instance.pk).filter(email__iexact=email).exists():
+            raise forms.ValidationError("This email address is already in use.")
+        return email.lower()
+
+
+class StyledPasswordChangeForm(StyledFormMixin, PasswordChangeForm):
+    pass
+
+
+class OrganisationForm(StyledFormMixin, forms.ModelForm):
+    class Meta:
+        model = Organization
+        fields = ["name", "slug"]
+
+    def clean_slug(self):
+        slug = self.cleaned_data.get("slug") or slugify(self.cleaned_data.get("name", ""))
+        if Organization.objects.exclude(pk=self.instance.pk if self.instance.pk else None).filter(slug=slug).exists():
+            raise forms.ValidationError("This slug is already taken.")
+        return slug
+
+
+class DefaultScanProfileForm(StyledFormMixin, forms.Form):
+    default_profile = forms.ModelChoiceField(
+        queryset=ScanProfile.objects.all().order_by("name"),
+        required=False,
+        empty_label="— No default —",
+        label="Default scan profile",
+        help_text="Applied automatically when queuing scans without an explicit profile.",
+    )
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         style_form_fields(self)

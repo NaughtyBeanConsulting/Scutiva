@@ -31,9 +31,21 @@ class ServerWorkspaceMixin:
         return response
 
     def form_valid(self, form):
+        is_create = not form.instance.pk
         if not getattr(form.instance, "created_by_id", None):
             form.instance.created_by = self.request.user
         self.object = form.save()
+
+        install_job = None
+        if is_create:
+            from scanners.models import ScanJob
+            from scanners.services import enqueue_scan_job
+            install_job = enqueue_scan_job(
+                server=self.object,
+                queue_name=ScanJob.Queue.INSTALL,
+                user=self.request.user,
+            )
+
         messages.success(self.request, "Server saved successfully.")
         if self.request.headers.get("HX-Request"):
             return render(
@@ -42,6 +54,7 @@ class ServerWorkspaceMixin:
                 {
                     "servers": Server.objects.order_by("name"),
                     "server": self.object,
+                    "install_job": install_job,
                 },
             )
         return super().form_valid(form)

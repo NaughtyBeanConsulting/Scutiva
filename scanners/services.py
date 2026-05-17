@@ -126,38 +126,64 @@ def ensure_job_not_cancelled(job):
 
 def generate_installer_script():
     return dedent(
-        """
+        r"""
         #!/usr/bin/env bash
+        # Scutiva Agent installer — Ubuntu 24.04 LTS (Noble Numbat)
         set -euo pipefail
 
+        log() { echo "[scutiva] $*"; }
+
         if [[ "$(id -u)" -ne 0 ]]; then
-          echo "Run as root or with sudo."
+          echo "[scutiva] ERROR: This script must be run as root or via sudo." >&2
           exit 1
         fi
 
+        DISTRO_ID="$(. /etc/os-release && echo "${ID:-}")"
+        DISTRO_VERSION="$(. /etc/os-release && echo "${VERSION_ID:-}")"
+        if [[ "${DISTRO_ID}" != "ubuntu" || "${DISTRO_VERSION}" != "24.04" ]]; then
+          echo "[scutiva] WARNING: This installer targets Ubuntu 24.04. Detected: ${DISTRO_ID} ${DISTRO_VERSION}." >&2
+        fi
+
+        log "Starting Scutiva Agent installation on Ubuntu 24.04..."
+
         export DEBIAN_FRONTEND=noninteractive
-        apt-get update
-        apt-get install -y curl wget gnupg lsb-release ca-certificates jq lynis
+        log "Updating package index..."
+        apt-get update -qq
+        log "Installing system dependencies..."
+        apt-get install -y -qq curl wget gnupg lsb-release ca-certificates jq lynis
 
-    install -d -m 0755 /opt/scutiva /opt/scutiva/bin /opt/scutiva/tmp /var/log/scutiva
+        log "Creating Scutiva directories..."
+        install -d -m 0755 /opt/scutiva /opt/scutiva/bin /opt/scutiva/tmp /var/log/scutiva
 
+        log "Installing Syft (SBOM generator)..."
         curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+        log "Installing Grype (vulnerability scanner)..."
         curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
 
-        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor -o /usr/share/keyrings/trivy.gpg
-        echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" > /etc/apt/sources.list.d/trivy.list
-        apt-get update
-        apt-get install -y trivy
+        log "Installing Trivy (vulnerability + misconfiguration scanner)..."
+        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key \
+          | gpg --dearmor -o /usr/share/keyrings/trivy.gpg
+        echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" \
+          > /etc/apt/sources.list.d/trivy.list
+        apt-get update -qq
+        apt-get install -y -qq trivy
 
-        cat >/etc/profile.d/scutiva-tools.sh <<'EOF'
+        log "Configuring PATH for Scutiva tools..."
+        cat > /etc/profile.d/scutiva-tools.sh <<'EOF'
         export PATH=/usr/local/bin:$PATH
         EOF
 
-        echo "Installed versions:"
-        syft version || true
-        grype version || true
-        trivy version || true
-        lynis show version || true
+        log "Pre-caching Trivy vulnerability database..."
+        trivy image --download-db-only --quiet 2>/dev/null || true
+
+        log "Verifying installed tool versions..."
+        echo "--- Scutiva Agent component versions ---"
+        syft version 2>&1 || true
+        grype version 2>&1 || true
+        trivy version 2>&1 || true
+        lynis show version 2>&1 || true
+        echo "--- Scutiva Agent installation complete ---"
         """
     ).strip()
 
@@ -823,8 +849,9 @@ def execute_scan_job(job):
 
 def execute_scan_job_pipeline(job):
   ensure_job_not_cancelled(job)
+  was_install = job.queue_name == ScanJob.Queue.INSTALL
   with transaction.atomic():
-    if job.queue_name == ScanJob.Queue.INSTALL:
+    if was_install:
       execute_install_job(job)
     elif job.queue_name == ScanJob.Queue.DISCOVERY:
       execute_discovery_job(job)
@@ -847,3 +874,6 @@ def execute_scan_job_pipeline(job):
   }
   job.progress_context = context
   job.save(update_fields=["stage", "status", "progress_percent", "current_command", "progress_context", "ended_at", "raw_output_path", "tools_used", "parsed_findings", "updated_at"])
+
+  if was_install:
+    enqueue_scan_job(server=job.server, queue_name=ScanJob.Queue.DISCOVERY)

@@ -3,9 +3,22 @@
 </div>
 <section class="panel">
     <h2 class="panel-title">Server saved</h2>
-    <p class="panel-subtitle">{{ server.name }} is ready for installer, discovery, and scan jobs.</p>
+    {% if install_job %}
+        <p class="panel-subtitle">
+            <strong class="text-white">{{ server.name }}</strong> has been added.
+            The Scutiva Agent installer is queued as job #{{ install_job.pk }} — it will install Syft, Grype, Trivy, and Lynis via sudo, then automatically start application discovery.
+        </p>
+        <div class="mt-4 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100">
+            Installing the Scutiva Agent on <strong>{{ server.host }}</strong>&thinsp;&mdash;&thinsp;check the Scans page to monitor progress.
+        </div>
+    {% else %}
+        <p class="panel-subtitle">{{ server.name }} has been updated successfully.</p>
+    {% endif %}
     <div class="mt-5 flex flex-wrap gap-3">
         <a class="btn-secondary" href="{% url 'servers:detail' server.pk %}">Open details</a>
+        {% if install_job %}
+            <a class="btn-secondary" href="{% url 'scanners:job-detail' install_job.pk %}">View install job</a>
+        {% endif %}
         <button class="btn-primary" hx-get="{% url 'servers:create' %}" hx-target="#server-workspace" hx-swap="innerHTML">Add another</button>
     </div>
 </section>

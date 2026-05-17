@@ -20,7 +20,8 @@
                     <th>Application</th>
                     <th>Format</th>
                     <th>Packages</th>
-                    <th>Path</th>
+                    <th>Generated</th>
+                    <th>Scan job</th>
                 </tr>
             </thead>
             <tbody>
@@ -29,15 +30,35 @@
                         <td>#{{ artifact.pk }}</td>
                         <td>{{ artifact.server.name }}</td>
                         <td>{{ artifact.application.name|default:'VM-wide' }}</td>
-                        <td>{{ artifact.format }}</td>
+                        <td class="uppercase">{{ artifact.format }}</td>
                         <td>{{ artifact.package_count }}</td>
-                        <td>{{ artifact.file_path }}</td>
+                        <td>{{ artifact.created_at|date:'Y-m-d H:i' }}</td>
+                        <td>
+                            {% if artifact.related_scan %}
+                                <a class="text-cyan-300 hover:text-cyan-200" href="{% url 'scanners:job-detail' artifact.related_scan.pk %}">
+                                    #{{ artifact.related_scan.pk }}
+                                </a>
+                            {% else %}
+                                <span class="text-slate-500">—</span>
+                            {% endif %}
+                        </td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="6" class="empty-row">No SBOMs have been stored yet.</td></tr>
+                    <tr><td colspan="7" class="empty-row">No SBOMs have been stored yet.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
+    {% if is_paginated %}
+        <div class="mt-4 flex items-center gap-3 text-sm text-slate-400">
+            {% if page_obj.has_previous %}
+                <a class="btn-secondary px-3 py-2 text-xs" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+            {% endif %}
+            <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+            {% if page_obj.has_next %}
+                <a class="btn-secondary px-3 py-2 text-xs" href="?page={{ page_obj.next_page_number }}">Next</a>
+            {% endif %}
+        </div>
+    {% endif %}
 </section>
 {% endblock %}
